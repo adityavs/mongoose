@@ -3,12 +3,13 @@
  * Module dependencies.
  */
 
-var assert = require('power-assert'),
-    start = require('./common'),
-    mongoose = start.mongoose,
-    Schema = mongoose.Schema,
-    SchemaType = mongoose.SchemaType,
-    ValidatorError = SchemaType.ValidatorError;
+var assert = require('power-assert');
+var start = require('./common');
+var mongoose = start.mongoose;
+var Schema = mongoose.Schema;
+var SchemaType = mongoose.SchemaType;
+var ValidatorError = SchemaType.ValidatorError;
+var ValidationError = require('../lib/error/validation');
 
 describe('ValidationError', function() {
   describe('#infiniteRecursion', function() {
@@ -131,6 +132,32 @@ describe('ValidationError', function() {
         });
       });
     });
+
+    it('with correct error message (gh-4207)', function(done) {
+      var old = mongoose.Error.messages;
+      mongoose.Error.messages = {
+        'String': {
+          minlength: 'woops!'
+        }
+      };
+
+      var AddressSchema = new Schema({
+        postalCode: { type: String, minlength: 5 }
+      });
+
+      var Address = mongoose.model('gh4207', AddressSchema);
+
+      var model = new Address({
+        postalCode: '9512'
+      });
+
+      // should fail validation
+      model.validate(function(err) {
+        assert.equal(err.errors['postalCode'].message, 'woops!');
+        mongoose.Error.messages = old;
+        done();
+      });
+    });
   });
 
   describe('#maxlength', function() {
@@ -195,5 +222,22 @@ describe('ValidationError', function() {
       assert.equal(result, 'I had eggs and bacon for breakfast');
       done();
     });
+  });
+
+  it('JSON.stringify() with message (gh-5309)', function(done) {
+    model.modelName = 'TestClass';
+    var err = new ValidationError(new model());
+
+    err.addError('test', { message: 'Fail' });
+
+    var obj = JSON.parse(JSON.stringify(err));
+    assert.ok(obj.message.indexOf('TestClass validation failed') !== -1,
+      obj.message);
+    assert.ok(obj.message.indexOf('test: Fail') !== -1,
+      obj.message);
+
+    done();
+
+    function model() {}
   });
 });

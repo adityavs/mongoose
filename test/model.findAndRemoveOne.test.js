@@ -11,65 +11,75 @@ var start = require('./common'),
     ObjectId = Schema.Types.ObjectId,
     DocumentObjectId = mongoose.Types.ObjectId;
 
-/**
- * Setup.
- */
+describe('model: findOneAndRemove:', function() {
+  var Comments;
+  var BlogPost;
+  var modelname;
+  var collection;
+  var strictSchema;
+  var db;
 
-var Comments = new Schema;
+  before(function() {
+    Comments = new Schema;
 
-Comments.add({
-  title: String,
-  date: Date,
-  body: String,
-  comments: [Comments]
-});
+    Comments.add({
+      title: String,
+      date: Date,
+      body: String,
+      comments: [Comments]
+    });
 
-var BlogPost = new Schema({
-  title: String,
-  author: String,
-  slug: String,
-  date: Date,
-  meta: {
-    date: Date,
-    visitors: Number
-  },
-  published: Boolean,
-  mixed: {},
-  numbers: [Number],
-  owners: [ObjectId],
-  comments: [Comments]
-});
+    BlogPost = new Schema({
+      title: String,
+      author: String,
+      slug: String,
+      date: Date,
+      meta: {
+        date: Date,
+        visitors: Number
+      },
+      published: Boolean,
+      mixed: {},
+      numbers: [Number],
+      owners: [ObjectId],
+      comments: [Comments]
+    });
 
-BlogPost.virtual('titleWithAuthor')
-  .get(function() {
-    return this.get('title') + ' by ' + this.get('author');
-  })
-  .set(function(val) {
-    var split = val.split(' by ');
-    this.set('title', split[0]);
-    this.set('author', split[1]);
+    BlogPost.virtual('titleWithAuthor')
+      .get(function() {
+        return this.get('title') + ' by ' + this.get('author');
+      })
+      .set(function(val) {
+        var split = val.split(' by ');
+        this.set('title', split[0]);
+        this.set('author', split[1]);
+      });
+
+    BlogPost.method('cool', function() {
+      return this;
+    });
+
+    BlogPost.static('woot', function() {
+      return this;
+    });
+
+    modelname = 'RemoveOneBlogPost';
+    mongoose.model(modelname, BlogPost);
+
+    collection = 'removeoneblogposts_' + random();
+
+    strictSchema = new Schema({name: String}, {strict: true});
+    mongoose.model('RemoveOneStrictSchema', strictSchema);
+
+    db = start();
   });
 
-BlogPost.method('cool', function() {
-  return this;
-});
+  after(function(done) {
+    db.close(done);
+  });
 
-BlogPost.static('woot', function() {
-  return this;
-});
-
-var modelname = 'RemoveOneBlogPost';
-mongoose.model(modelname, BlogPost);
-
-var collection = 'removeoneblogposts_' + random();
-
-var strictSchema = new Schema({name: String}, {strict: true});
-mongoose.model('RemoveOneStrictSchema', strictSchema);
-
-describe('model: findOneAndRemove:', function() {
   it('returns the original document', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         title = 'remove muah';
 
     var post = new M({title: title});
@@ -79,7 +89,6 @@ describe('model: findOneAndRemove:', function() {
         assert.ifError(err);
         assert.equal(post.id, doc.id);
         M.findById(post.id, function(err, gone) {
-          db.close();
           assert.ifError(err);
           assert.equal(gone, null);
           done();
@@ -89,10 +98,7 @@ describe('model: findOneAndRemove:', function() {
   });
 
   it('options/conditions/doc are merged when no callback is passed', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection);
-
-    db.close();
+    var M = db.model(modelname, collection);
 
     var now = new Date,
         query;
@@ -128,8 +134,7 @@ describe('model: findOneAndRemove:', function() {
   });
 
   it('executes when a callback is passed', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection + random()),
+    var M = db.model(modelname, collection + random()),
         pending = 5;
 
     M.findOneAndRemove({name: 'aaron1'}, {select: 'name'}, cb);
@@ -142,14 +147,12 @@ describe('model: findOneAndRemove:', function() {
       assert.ifError(err);
       assert.equal(doc, null); // no previously existing doc
       if (--pending) return;
-      db.close();
       done();
     }
   });
 
   it('executed with only a callback throws', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         err;
 
     try {
@@ -158,16 +161,12 @@ describe('model: findOneAndRemove:', function() {
       err = e;
     }
 
-    db.close();
     assert.ok(/First argument must not be a function/.test(err));
     done();
   });
-});
 
-describe('model: findByIdAndRemove:', function() {
   it('executed with only a callback throws', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         err;
 
     try {
@@ -176,14 +175,12 @@ describe('model: findByIdAndRemove:', function() {
       err = e;
     }
 
-    db.close();
     assert.ok(/First argument must not be a function/.test(err));
     done();
   });
 
   it('executes when a callback is passed', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection + random()),
+    var M = db.model(modelname, collection + random()),
         _id = new DocumentObjectId,
         pending = 2;
 
@@ -194,14 +191,12 @@ describe('model: findByIdAndRemove:', function() {
       assert.ifError(err);
       assert.equal(doc, null); // no previously existing doc
       if (--pending) return;
-      db.close();
       done();
     }
   });
 
   it('returns the original document', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         title = 'remove muah pleez';
 
     var post = new M({title: title});
@@ -211,7 +206,6 @@ describe('model: findByIdAndRemove:', function() {
         assert.ifError(err);
         assert.equal(post.id, doc.id);
         M.findById(post.id, function(err, gone) {
-          db.close();
           assert.ifError(err);
           assert.equal(gone, null);
           done();
@@ -221,11 +215,8 @@ describe('model: findByIdAndRemove:', function() {
   });
 
   it('options/conditions/doc are merged when no callback is passed', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         _id = new DocumentObjectId;
-
-    db.close();
 
     var query;
 
@@ -246,11 +237,8 @@ describe('model: findByIdAndRemove:', function() {
   });
 
   it('supports v3 select string syntax', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         _id = new DocumentObjectId;
-
-    db.close();
 
     var query;
 
@@ -265,11 +253,8 @@ describe('model: findByIdAndRemove:', function() {
   });
 
   it('supports v3 select object syntax', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         _id = new DocumentObjectId;
-
-    db.close();
 
     var query;
 
@@ -284,11 +269,8 @@ describe('model: findByIdAndRemove:', function() {
   });
 
   it('supports v3 sort string syntax', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         _id = new DocumentObjectId;
-
-    db.close();
 
     var query;
 
@@ -305,8 +287,7 @@ describe('model: findByIdAndRemove:', function() {
   });
 
   it('supports v3 sort object syntax', function(done) {
-    var db = start(),
-        M = db.model(modelname, collection),
+    var M = db.model(modelname, collection),
         _id = new DocumentObjectId;
 
     var query;
@@ -320,11 +301,10 @@ describe('model: findByIdAndRemove:', function() {
     assert.equal(Object.keys(query.options.sort).length, 2);
     assert.equal(query.options.sort.author, 1);
     assert.equal(query.options.sort.title, -1);
-    db.close(done);
+    done();
   });
 
   it('supports population (gh-1395)', function(done) {
-    var db = start();
     var M = db.model('A', {name: String});
     var N = db.model('B', {a: {type: Schema.ObjectId, ref: 'A'}, i: Number});
 
@@ -334,30 +314,20 @@ describe('model: findByIdAndRemove:', function() {
         if (err) return done(err);
 
         N.findOneAndRemove({_id: b._id}, {select: 'a -_id'})
-        .populate('a')
-        .exec(function(err, doc) {
-          if (err) return done(err);
-          assert.ok(doc);
-          assert.equal(doc._id, undefined);
-          assert.ok(doc.a);
-          assert.equal('i am an A', doc.a.name);
-          db.close(done);
-        });
+          .populate('a')
+          .exec(function(err, doc) {
+            if (err) return done(err);
+            assert.ok(doc);
+            assert.equal(doc._id, undefined);
+            assert.ok(doc.a);
+            assert.equal('i am an A', doc.a.name);
+            done();
+          });
       });
     });
   });
 
   describe('middleware', function() {
-    var db;
-
-    beforeEach(function() {
-      db = start();
-    });
-
-    afterEach(function(done) {
-      db.close(done);
-    });
-
     it('works', function(done) {
       var s = new Schema({
         topping: {type: String, default: 'bacon'},
@@ -395,7 +365,7 @@ describe('model: findByIdAndRemove:', function() {
       });
     });
 
-    it('works with exec()', function(done) {
+    it('works with exec() (gh-439)', function(done) {
       var s = new Schema({
         topping: {type: String, default: 'bacon'},
         base: String
@@ -411,7 +381,7 @@ describe('model: findByIdAndRemove:', function() {
         ++postCount;
       });
 
-      var Breakfast = db.model('gh-439', s);
+      var Breakfast = db.model('Breakfast', s);
       var breakfast = new Breakfast({
         base: 'eggs'
       });
@@ -432,4 +402,3 @@ describe('model: findByIdAndRemove:', function() {
     });
   });
 });
-

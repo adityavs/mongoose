@@ -115,7 +115,7 @@ mongoose.connect('mongodb://localhost/mongoose-bench', function(err) {
       });
       var nData = utils.clone(data);
       user.insert(nData, function(err, res) {
-        dIds.push(res[0]._id);
+        dIds.push(res.insertedIds[0]);
         --count || next();
       });
       BlogPost.create(blogData, function(err, bp) {
@@ -132,7 +132,7 @@ mongoose.connect('mongodb://localhost/mongoose-bench', function(err) {
         if (err) {
           throw err;
         }
-        bdIds.push(res[0]._id);
+        bdIds.push(res.insertedIds[0]);
         --count || next();
       });
     }
@@ -314,24 +314,24 @@ mongoose.connect('mongodb://localhost/mongoose-bench', function(err) {
         });
       }
     })
-    .on('cycle', function(evt) {
-      if (process.env.MONGOOSE_DEV || process.env.PULL_REQUEST) {
-        console.log(String(evt.target));
-      }
-    }).on('complete', function() {
-      closeDB();
-      if (!process.env.MONGOOSE_DEV && !process.env.PULL_REQUEST) {
-        var outObj = {};
-        this.forEach(function(item) {
-          var out = {};
-          out.stats = item.stats;
-          delete out.stats.sample;
-          out.ops = item.hz;
-          outObj[item.name.replace(/\s/g, '')] = out;
-        });
-        console.log(JSON.stringify(outObj));
-      }
-    });
+      .on('cycle', function(evt) {
+        if (process.env.MONGOOSE_DEV || process.env.PULL_REQUEST) {
+          console.log(String(evt.target));
+        }
+      }).on('complete', function() {
+        closeDB();
+        if (!process.env.MONGOOSE_DEV && !process.env.PULL_REQUEST) {
+          var outObj = {};
+          this.forEach(function(item) {
+            var out = {};
+            out.stats = item.stats;
+            delete out.stats.sample;
+            out.ops = item.hz;
+            outObj[item.name.replace(/\s/g, '')] = out;
+          });
+          console.dir(outObj, {depth: null, colors: true});
+        }
+      });
     function next() {
       for (var i = 0; i < 100; i++) {
         testBp.comments.push(commentData);

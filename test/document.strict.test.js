@@ -9,12 +9,20 @@ var start = require('./common'),
     Schema = mongoose.Schema;
 
 describe('document: strict mode:', function() {
+  var db;
+
+  before(function() {
+    db = start();
+  });
+
+  after(function(done) {
+    db.close(done);
+  });
+
   describe('should work', function() {
-    var db, Lax, Strict;
+    var Lax, Strict;
 
     before(function() {
-      db = start();
-
       var raw = {
         ts: {type: Date, default: Date.now},
         content: String,
@@ -23,7 +31,7 @@ describe('document: strict mode:', function() {
         arrayMixed: []
       };
 
-      var lax = new Schema(raw, {strict: false});
+      var lax = new Schema(raw, {strict: false, minimize: false});
       var strict = new Schema(raw);
 
       Lax = db.model('Lax', lax);
@@ -34,8 +42,8 @@ describe('document: strict mode:', function() {
       db.close(done);
     });
 
-    it('when creating models with non-strict schemas', function(done) {
-      var l = new Lax({content: 'sample', rouge: 'data'});
+    it('when creating models with non-strict schemas (gh-4274)', function(done) {
+      var l = new Lax({ content: 'sample', rouge: 'data', items: {} });
       assert.equal(l.$__.strictMode, false);
 
       var lo = l.toObject();
@@ -45,7 +53,20 @@ describe('document: strict mode:', function() {
       assert.equal(lo.content, 'sample');
       assert.equal(l.rouge, 'data');
       assert.equal(lo.rouge, 'data');
-      done();
+      assert.deepEqual(l.items, {});
+      assert.deepEqual(lo.items, {});
+
+      l.save(function(error) {
+        assert.ifError(error);
+        Lax.findById(l).exec(function(error, doc) {
+          assert.ifError(error);
+          var lo = doc.toObject();
+          assert.equal(lo.content, 'sample');
+          assert.equal(lo.rouge, 'data');
+          assert.deepEqual(lo.items, {});
+          done();
+        });
+      });
     });
 
     it('when creating models with strict schemas', function(done) {
@@ -108,8 +129,6 @@ describe('document: strict mode:', function() {
   });
 
   it('nested doc', function(done) {
-    var db = start();
-
     var lax = new Schema({
       name: {last: String}
     }, {strict: false});
@@ -142,12 +161,10 @@ describe('document: strict mode:', function() {
     assert.ok(!('hack' in s.name));
     assert.ok(!s.name.hack);
     assert.ok(!s.shouldnt);
-    db.close(done);
+    done();
   });
 
   it('sub doc', function(done) {
-    var db = start();
-
     var lax = new Schema({
       ts: {type: Date, default: Date.now},
       content: String
@@ -189,13 +206,11 @@ describe('document: strict mode:', function() {
       assert.equal(doc.dox[0].content, 'sample2');
       assert.ok(!('rouge' in doc.dox[0]));
       assert.ok(!doc.dox[0].rouge);
-      db.close(done);
+      done();
     });
   });
 
   it('virtuals', function(done) {
-    var db = start();
-
     var getCount = 0,
         setCount = 0;
 
@@ -205,15 +220,15 @@ describe('document: strict mode:', function() {
     });
 
     strictSchema
-    .virtual('myvirtual')
-    .get(function() {
-      getCount++;
-      return 'ok';
-    })
-    .set(function(v) {
-      setCount++;
-      this.prop = v;
-    });
+      .virtual('myvirtual')
+      .get(function() {
+        getCount++;
+        return 'ok';
+      })
+      .set(function(v) {
+        setCount++;
+        this.prop = v;
+      });
 
     var StrictModel = db.model('StrictVirtual', strictSchema);
 
@@ -234,7 +249,7 @@ describe('document: strict mode:', function() {
     assert.equal(getCount, 1);
     assert.equal(setCount, 2);
 
-    db.close(done);
+    done();
   });
 
   it('can be overridden during set()', function(done) {
@@ -285,7 +300,7 @@ describe('document: strict mode:', function() {
     var doc = s.toObject();
     doc.notInSchema = true;
 
-    Strict.collection.insert(doc, {w: 1}, function(err) {
+    Strict.collection.insert(doc, function(err) {
       assert.ifError(err);
 
       Strict.findById(doc._id, function(err, doc) {
@@ -293,18 +308,18 @@ describe('document: strict mode:', function() {
         assert.equal(doc._doc.bool, true);
         assert.equal(doc._doc.notInSchema, true);
 
-        Strict.update({_id: doc._id}, {$unset: {bool: 1, notInSchema: 1}}, {strict: false, w: 1},
-            function(err) {
-              assert.ifError(err);
+        Strict.update({_id: doc._id}, {$unset: {bool: 1, notInSchema: 1}}, {strict: false},
+          function(err) {
+            assert.ifError(err);
 
-              Strict.findById(doc._id, function(err, doc) {
-                db.close();
-                assert.ifError(err);
-                assert.equal(doc._doc.bool, undefined);
-                assert.equal(doc._doc.notInSchema, undefined);
-                done();
-              });
+            Strict.findById(doc._id, function(err, doc) {
+              db.close();
+              assert.ifError(err);
+              assert.equal(doc._doc.bool, undefined);
+              assert.equal(doc._doc.notInSchema, undefined);
+              done();
             });
+          });
       });
     });
   });
@@ -332,16 +347,16 @@ describe('document: strict mode:', function() {
         assert.equal(doc._doc.notInSchema, true);
 
         Strict.findOneAndUpdate({_id: doc._id}, {$unset: {bool: 1, notInSchema: 1}}, {strict: false, w: 1},
-            function(err) {
-              assert.ifError(err);
+          function(err) {
+            assert.ifError(err);
 
-              Strict.findById(doc._id, function(err, doc) {
-                assert.ifError(err);
-                assert.equal(doc._doc.bool, undefined);
-                assert.equal(doc._doc.notInSchema, undefined);
-                db.close(done);
-              });
+            Strict.findById(doc._id, function(err, doc) {
+              assert.ifError(err);
+              assert.equal(doc._doc.bool, undefined);
+              assert.equal(doc._doc.notInSchema, undefined);
+              db.close(done);
             });
+          });
       });
     });
   });
@@ -353,7 +368,7 @@ describe('document: strict mode:', function() {
       var M = mongoose.model('throwStrictSet', schema, 'tss_' + random());
       var m = new M;
 
-      var badField = /Field `[\w\.]+` is not in schema/;
+      var badField = /Field `[\w.]+` is not in schema/;
 
       assert.throws(function() {
         m.set('unknown.stuff.is.here', 3);
@@ -423,7 +438,7 @@ describe('document: strict mode:', function() {
       }, {strict: 'throw'});
 
       // Create the model
-      var Foo = mongoose.model('Foo', FooSchema);
+      var Foo = mongoose.model('gh2665', FooSchema);
 
       assert.doesNotThrow(function() {
         new Foo({name: mongoose.Types.ObjectId(), father: {name: {full: 'bacon'}}});
@@ -448,4 +463,3 @@ describe('document: strict mode:', function() {
     });
   });
 });
-

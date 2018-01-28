@@ -60,15 +60,14 @@ describe('model aggregate', function() {
   });
 
   describe('works', function() {
-    it('with argument lists', function(done) {
+    it('when return promise', function(done) {
       this.timeout(4000);
 
-      A.aggregate(group, project, function(err, res) {
-        assert.ifError(err);
+      A.aggregate([group, project]).then( function(res) {
         assert.ok(res);
-        assert.equal(res.length, 1);
+        assert.equal(1, res.length);
         assert.ok('maxAge' in res[0]);
-        assert.equal(res[0].maxAge, maxAge);
+        assert.equal(maxAge, res[0].maxAge);
         done();
       });
     });
@@ -89,12 +88,11 @@ describe('model aggregate', function() {
     it('with Aggregate syntax', function(done) {
       this.timeout(4000);
 
-      var promise = A.aggregate()
+      A.aggregate()
         .group(group.$group)
         .project(project.$project)
         .exec(function(err, res) {
           assert.ifError(err);
-          assert.ok(promise instanceof mongoose.Promise);
           assert.ok(res);
           assert.equal(res.length, 1);
           assert.ok('maxAge' in res[0]);
@@ -118,7 +116,7 @@ describe('model aggregate', function() {
         assert.ok('maxAge' in res[0]);
         assert.equal(maxAge, res[0].maxAge);
         done();
-      }).end();
+      });
     });
 
     it('when returning Aggregate', function(done) {

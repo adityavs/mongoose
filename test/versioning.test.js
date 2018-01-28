@@ -9,50 +9,48 @@ var start = require('./common'),
     Schema = mongoose.Schema,
     VersionError = mongoose.Error.VersionError;
 
-/**
- * Setup.
- */
-
-var Comments = new Schema();
-
-Comments.add({
-  title: String,
-  date: Date,
-  comments: [Comments],
-  dontVersionMeEither: []
-});
-
-var BlogPost = new Schema(
-  {
-    title: String,
-    date: Date,
-    meta: {
-      date: Date,
-      visitors: Number,
-      nested: [Comments],
-      numbers: [Number]
-    },
-    mixed: {},
-    numbers: [Number],
-    comments: [Comments],
-    arr: [],
-    dontVersionMe: []
-  },
-  {
-    collection: 'versioning_' + random(),
-    skipVersioning: {
-      dontVersionMe: true,
-      'comments.dontVersionMeEither': true
-    }
-  });
-
-mongoose.model('Versioning', BlogPost);
-
 describe('versioning', function() {
   var db;
+  var Comments;
+  var BlogPost;
 
   before(function() {
     db = start();
+
+    Comments = new Schema();
+
+    Comments.add({
+      title: String,
+      date: Date,
+      comments: [Comments],
+      dontVersionMeEither: []
+    });
+
+    BlogPost = new Schema(
+      {
+        title: String,
+        date: Date,
+        meta: {
+          date: Date,
+          visitors: Number,
+          nested: [Comments],
+          numbers: [Number]
+        },
+        mixed: {},
+        numbers: [Number],
+        comments: [Comments],
+        arr: [],
+        dontVersionMe: []
+      },
+      {
+        collection: 'versioning_' + random(),
+        skipVersioning: {
+          dontVersionMe: true,
+          'comments.dontVersionMeEither': true
+        }
+      });
+
+    mongoose.model('Versioning', BlogPost);
   });
 
   after(function(done) {
@@ -150,6 +148,7 @@ describe('versioning', function() {
 
     function test12(err, a, b) {
       assert.ok(err instanceof VersionError);
+      assert.ok(err.stack.indexOf('versioning.test.js') !== -1);
       assert.ok(/No matching document/.test(err), 'changes to b should not be applied');
       assert.equal(a.comments.length, 5);
 
@@ -405,8 +404,8 @@ describe('versioning', function() {
 
   it('versionKey is configurable', function(done) {
     var schema = new Schema(
-        {configured: 'bool'},
-        {versionKey: 'lolwat', collection: 'configuredversion' + random()});
+      {configured: 'bool'},
+      {versionKey: 'lolwat', collection: 'configuredversion' + random()});
     var V = db.model('ConfiguredVersionKey', schema);
     var v = new V({configured: true});
     v.save(function(err) {
@@ -526,5 +525,32 @@ describe('versioning', function() {
       assert.equal(obj.__v, undefined);
       done();
     });
+  });
+
+  it('copying doc works (gh-5779)', function(done) {
+    var schema = new Schema({ subdocs: [{ a: Number }] });
+    var M = db.model('gh5779', schema, 'gh5779');
+    var m = new M({ subdocs: [] });
+    var m2;
+
+    m.save().
+      then(function() {
+        m2 = new M(m);
+        m2.subdocs.push({ a: 2 });
+        return m2.save();
+      }).
+      then(function() {
+        m2.subdocs[0].a = 3;
+        return m2.save();
+      }).
+      then(function() {
+        assert.equal(m2.subdocs[0].a, 3);
+        return M.findById(m._id);
+      }).
+      then(function(doc) {
+        assert.equal(doc.subdocs[0].a, 3);
+        done();
+      }).
+      catch(done);
   });
 });

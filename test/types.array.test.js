@@ -11,24 +11,35 @@ var mongodb = require('mongodb');
 var MongooseArray = mongoose.Types.Array;
 var collection = 'avengers_' + random();
 
-var User = new Schema({
-  name: String,
-  pets: [Schema.ObjectId]
-});
-
-mongoose.model('User', User);
-
-var Pet = new Schema({
-  name: String
-});
-
-mongoose.model('Pet', Pet);
-
 /**
  * Test.
  */
 
 describe('types array', function() {
+  var User;
+  var Pet;
+  var db;
+
+  before(function() {
+    User = new Schema({
+      name: String,
+      pets: [Schema.ObjectId]
+    });
+
+    mongoose.model('User', User);
+
+    Pet = new Schema({
+      name: String
+    });
+
+    mongoose.model('Pet', Pet);
+    db = start();
+  });
+
+  after(function(done) {
+    db.close(done);
+  });
+
   it('behaves and quacks like an Array', function(done) {
     var a = new MongooseArray;
 
@@ -36,7 +47,6 @@ describe('types array', function() {
     assert.ok(a.isMongooseArray);
     assert.equal(Array.isArray(a), true);
 
-    assert.deepEqual(Object.keys(a), Object.keys(a.toObject()));
     assert.deepEqual(a._atomics.constructor, Object);
     done();
   });
@@ -69,8 +79,7 @@ describe('types array', function() {
 
   describe('indexOf()', function() {
     it('works', function(done) {
-      var db = start(),
-          User = db.model('User', 'users_' + random()),
+      var User = db.model('User', 'users_' + random()),
           Pet = db.model('Pet', 'pets' + random());
 
       var tj = new User({name: 'tj'}),
@@ -98,7 +107,7 @@ describe('types array', function() {
               assert.equal(user.pets.indexOf(tobi._id), 0);
               assert.equal(user.pets.indexOf(loki._id), 1);
               assert.equal(user.pets.indexOf(jane._id), 2);
-              db.close(done);
+              done();
             });
           });
         });
@@ -113,7 +122,7 @@ describe('types array', function() {
   });
 
   describe('push()', function() {
-    var db, N, S, B, M, D, ST;
+    var N, S, B, M, D, ST;
 
     function save(doc, cb) {
       doc.save(function(err) {
@@ -126,7 +135,6 @@ describe('types array', function() {
     }
 
     before(function(done) {
-      db = start();
       N = db.model('arraySet', Schema({arr: [Number]}));
       S = db.model('arraySetString', Schema({arr: [String]}));
       B = db.model('arraySetBuffer', Schema({arr: [Buffer]}));
@@ -139,10 +147,6 @@ describe('types array', function() {
         }]
       }));
       done();
-    });
-
-    after(function(done) {
-      db.close(done);
     });
 
     it('works with numbers', function(done) {
@@ -310,16 +314,6 @@ describe('types array', function() {
   });
 
   describe('splice()', function() {
-    var db;
-
-    before(function() {
-      db = start();
-    });
-
-    after(function(done) {
-      db.close(done);
-    });
-
     it('works', function(done) {
       var collection = 'splicetest-number' + random();
       var schema = new Schema({numbers: [Number]}),
@@ -388,16 +382,6 @@ describe('types array', function() {
   });
 
   describe('unshift()', function() {
-    var db;
-
-    before(function() {
-      db = start();
-    });
-
-    after(function(done) {
-      db.close(done);
-    });
-
     it('works', function(done) {
       var schema = new Schema({
             types: [new Schema({type: String})],
@@ -478,7 +462,7 @@ describe('types array', function() {
     });
 
     it('applies setters (gh-3032)', function(done) {
-      var ST = db.model('setterArray', Schema({
+      var ST = db.model('setterArrayUnshift', Schema({
         arr: [{
           type: String,
           lowercase: true
@@ -507,15 +491,6 @@ describe('types array', function() {
   });
 
   describe('shift()', function() {
-    var db;
-    before(function() {
-      db = start();
-    });
-
-    after(function(done) {
-      db.close(done);
-    });
-
     it('works', function(done) {
       var schema = new Schema({
         types: [new Schema({type: String})],
@@ -562,7 +537,6 @@ describe('types array', function() {
           doc.save(function(err) {
             assert.ifError(err);
             A.findById(a._id, function(err, doc) {
-              db.close();
               assert.ifError(err);
 
               var obj = doc.types.toObject();
@@ -589,9 +563,8 @@ describe('types array', function() {
   describe('$shift', function() {
     it('works', function(done) {
       // atomic shift uses $pop -1
-      var db = start();
       var painting = new Schema({colors: []});
-      var Painting = db.model('Painting', painting);
+      var Painting = db.model('PaintingShift', painting);
       var p = new Painting({colors: ['blue', 'green', 'yellow']});
       p.save(function(err) {
         assert.ifError(err);
@@ -615,7 +588,6 @@ describe('types array', function() {
             doc.save(function(err) {
               assert.equal(err, null);
               Painting.findById(doc, function(err, doc) {
-                db.close();
                 assert.ifError(err);
                 assert.equal(doc.colors.length, 1);
                 assert.equal(doc.colors[0], 'yellow');
@@ -630,12 +602,11 @@ describe('types array', function() {
 
   describe('pop()', function() {
     it('works', function(done) {
-      var db = start(),
-          schema = new Schema({
-            types: [new Schema({type: String})],
-            nums: [Number],
-            strs: [String]
-          });
+      var schema = new Schema({
+        types: [new Schema({type: String})],
+        nums: [Number],
+        strs: [String]
+      });
 
       var A = db.model('pop', schema, 'pop' + random());
 
@@ -676,7 +647,6 @@ describe('types array', function() {
           doc.save(function(err) {
             assert.ifError(err);
             A.findById(a._id, function(err, doc) {
-              db.close();
               assert.ifError(err);
 
               var obj = doc.types.toObject();
@@ -702,7 +672,6 @@ describe('types array', function() {
 
   describe('pull()', function() {
     it('works', function(done) {
-      var db = start();
       var catschema = new Schema({name: String});
       var Cat = db.model('Cat', catschema);
       var schema = new Schema({
@@ -718,7 +687,6 @@ describe('types array', function() {
           assert.ifError(err);
 
           A.findById(a, function(err, doc) {
-            db.close();
             assert.ifError(err);
             assert.equal(doc.a.length, 1);
             doc.a.pull(cat.id);
@@ -730,7 +698,6 @@ describe('types array', function() {
     });
 
     it('handles pulling with no _id (gh-3341)', function(done) {
-      var db = start();
       var personSchema = new Schema({
         name: String,
         role: String
@@ -770,7 +737,37 @@ describe('types array', function() {
             assert.equal(gnr.members[1].name, 'Izzy');
             assert.equal(gnr.members[2].name, 'Duff');
             assert.equal(gnr.members[3].name, 'Adler');
-            db.close(done);
+            done();
+          });
+        });
+      });
+    });
+
+    it('properly works with undefined', function(done) {
+      var catschema = new Schema({ name: String, colors: [{hex: String}] });
+      var Cat = db.model('ColoredCat', catschema);
+
+      var cat = new Cat({name: 'peanut', colors: [
+        {hex: '#FFF'}, {hex: '#000'}, null
+      ]});
+
+      cat.save(function(err) {
+        assert.ifError(err);
+
+        cat.colors.pull(undefined); // converted to null (as mongodb does)
+        assert.equal(cat.colors.length, 2);
+        assert.equal(cat.colors[0].hex, '#FFF');
+        assert.equal(cat.colors[1].hex, '#000');
+
+        cat.save(function(err) {
+          assert.ifError(err);
+
+          Cat.findById(cat._id, function(err, doc) {
+            assert.ifError(err);
+            assert.equal(doc.colors.length, 2);
+            assert.equal(doc.colors[0].hex, '#FFF');
+            assert.equal(doc.colors[1].hex, '#000');
+            done();
           });
         });
       });
@@ -779,7 +776,6 @@ describe('types array', function() {
 
   describe('$pop()', function() {
     it('works', function(done) {
-      var db = start();
       var painting = new Schema({colors: []});
       var Painting = db.model('Painting', painting);
       var p = new Painting({colors: ['blue', 'green', 'yellow']});
@@ -806,7 +802,6 @@ describe('types array', function() {
             doc.save(function(err) {
               assert.equal(err, null);
               Painting.findById(doc, function(err, doc) {
-                db.close();
                 assert.strictEqual(null, err);
                 assert.equal(doc.colors.length, 1);
                 assert.equal(doc.colors[0], 'blue');
@@ -821,8 +816,7 @@ describe('types array', function() {
 
   describe('addToSet()', function() {
     it('works', function(done) {
-      var db = start(),
-          e = new Schema({name: String, arr: []}),
+      var e = new Schema({name: String, arr: []}),
           schema = new Schema({
             num: [Number],
             str: [String],
@@ -991,7 +985,6 @@ describe('types array', function() {
                 assert.ifError(err);
 
                 M.findById(m, function(err, m) {
-                  db.close();
                   assert.ifError(err);
 
                   assert.equal(m.num.length, 8);
@@ -1059,8 +1052,7 @@ describe('types array', function() {
     });
 
     it('handles sub-documents that do not have an _id gh-1973', function(done) {
-      var db = start(),
-          e = new Schema({name: String, arr: []}, {_id: false}),
+      var e = new Schema({name: String, arr: []}, {_id: false}),
           schema = new Schema({
             doc: [e]
           });
@@ -1084,13 +1076,12 @@ describe('types array', function() {
           assert.ok(m.doc.some(function(v) {
             return v.name === 'House';
           }));
-          db.close(done);
+          done();
         });
       });
     });
 
     it('applies setters (gh-3032)', function(done) {
-      var db = start();
       var ST = db.model('setterArray', Schema({
         arr: [{
           type: String,
@@ -1113,7 +1104,7 @@ describe('types array', function() {
           assert.strictEqual('two', doc.arr[1]);
           assert.strictEqual('three', doc.arr[2]);
 
-          db.close(done);
+          done();
         });
       });
     });
@@ -1121,7 +1112,6 @@ describe('types array', function() {
 
   describe('nonAtomicPush()', function() {
     it('works', function(done) {
-      var db = start();
       var U = db.model('User');
       var ID = mongoose.Types.ObjectId;
 
@@ -1145,7 +1135,6 @@ describe('types array', function() {
           u.save(function(err) {
             assert.ifError(err);
             U.findById(u._id, function(err) {
-              db.close();
               assert.ifError(err);
               assert.equal(u.pets.length, 2);
               assert.equal(u.pets[0].toString(), id1.toString());
@@ -1160,7 +1149,6 @@ describe('types array', function() {
 
   describe('sort()', function() {
     it('order should be saved', function(done) {
-      var db = start();
       var M = db.model('ArraySortOrder', new Schema({x: [Number]}));
       var m = new M({x: [1, 4, 3, 2]});
       m.save(function(err) {
@@ -1186,7 +1174,7 @@ describe('types array', function() {
               assert.equal(m.x[3], 4);
 
               m.x.sort(function(a, b) {
-                return b > a;
+                return b - a;
               });
 
               m.save(function(err) {
@@ -1198,7 +1186,7 @@ describe('types array', function() {
                   assert.equal(m.x[1], 3);
                   assert.equal(m.x[2], 2);
                   assert.equal(m.x[3], 1);
-                  db.close(done);
+                  done();
                 });
               });
             });
@@ -1209,7 +1197,7 @@ describe('types array', function() {
   });
 
   describe('set()', function() {
-    var db, N, S, B, M, D, ST;
+    var N, S, B, M, D, ST;
 
     function save(doc, cb) {
       doc.save(function(err) {
@@ -1222,23 +1210,18 @@ describe('types array', function() {
     }
 
     before(function(done) {
-      db = start();
-      N = db.model('arraySet', Schema({arr: [Number]}));
-      S = db.model('arraySetString', Schema({arr: [String]}));
-      B = db.model('arraySetBuffer', Schema({arr: [Buffer]}));
-      M = db.model('arraySetMixed', Schema({arr: []}));
-      D = db.model('arraySetSubDocs', Schema({arr: [{name: String}]}));
-      ST = db.model('arrayWithSetters', Schema({
+      N = db.model('arraySet2', Schema({arr: [Number]}));
+      S = db.model('arraySetString2', Schema({arr: [String]}));
+      B = db.model('arraySetBuffer2', Schema({arr: [Buffer]}));
+      M = db.model('arraySetMixed2', Schema({arr: []}));
+      D = db.model('arraySetSubDocs2', Schema({arr: [{name: String}]}));
+      ST = db.model('arrayWithSetters2', Schema({
         arr: [{
           type: String,
           lowercase: true
         }]
       }));
       done();
-    });
-
-    after(function(done) {
-      db.close(done);
     });
 
     it('works combined with other ops', function(done) {
@@ -1555,8 +1538,6 @@ describe('types array', function() {
 
   describe('setting a doc array', function() {
     it('should adjust path positions', function(done) {
-      var db = start();
-
       var D = db.model('subDocPositions', new Schema({
         em1: [new Schema({name: String})]
       }));
@@ -1585,7 +1566,6 @@ describe('types array', function() {
           d.save(function(err) {
             assert.ifError(err);
             D.findById(d, function(err, d) {
-              db.close();
               assert.ifError(err);
               assert.equal(d.em1[0].name, 'position two');
               assert.equal(d.em1[1].name, 'pos1');
@@ -1599,8 +1579,6 @@ describe('types array', function() {
 
   describe('paths with similar names', function() {
     it('should be saved', function(done) {
-      var db = start();
-
       var D = db.model('similarPathNames', new Schema({
         account: {
           role: String,
@@ -1627,7 +1605,6 @@ describe('types array', function() {
           d.save(function(err) {
             assert.ifError(err);
             D.findById(d, function(err, d) {
-              db.close();
               assert.ifError(err);
               assert.equal(d.account.role, 'president');
               assert.equal(d.account.roles.length, 2);
@@ -1645,7 +1622,6 @@ describe('types array', function() {
 
   describe('of number', function() {
     it('allows nulls', function(done) {
-      var db = start();
       var schema = new Schema({x: [Number]}, {collection: 'nullsareallowed' + random()});
       var M = db.model('nullsareallowed', schema);
       var m;
@@ -1657,7 +1633,6 @@ describe('types array', function() {
         // undefined is not allowed
         m = new M({x: [1, undefined, 3]});
         m.save(function(err) {
-          db.close();
           assert.ok(err);
           done();
         });
@@ -1666,16 +1641,6 @@ describe('types array', function() {
   });
 
   describe('bug fixes', function() {
-    var db;
-
-    before(function() {
-      db = start();
-    });
-
-    after(function(done) {
-      db.close(done);
-    });
-
     it('modifying subdoc props and manipulating the array works (gh-842)', function(done) {
       var schema = new Schema({em: [new Schema({username: String})]});
       var M = db.model('modifyingSubDocAndPushing', schema);
@@ -1767,16 +1732,14 @@ describe('types array', function() {
 
   describe('default type', function() {
     it('casts to Mixed', function(done) {
-      var db = start(),
-          DefaultArraySchema = new Schema({
-            num1: Array,
-            num2: []
-          });
+      var DefaultArraySchema = new Schema({
+        num1: Array,
+        num2: []
+      });
 
       mongoose.model('DefaultArraySchema', DefaultArraySchema);
       var DefaultArray = db.model('DefaultArraySchema', collection);
       var arr = new DefaultArray();
-      db.close();
 
       assert.equal(arr.get('num1').length, 0);
       assert.equal(arr.get('num2').length, 0);
@@ -1808,7 +1771,6 @@ describe('types array', function() {
   });
 
   describe('removing from an array atomically using MongooseArray#remove', function() {
-    var db;
     var B;
 
     before(function(done) {
@@ -1820,13 +1782,8 @@ describe('types array', function() {
         oidIds: [{name: 'string'}]
       });
 
-      db = start();
       B = db.model('BlogPost', schema);
       done();
-    });
-
-    after(function(done) {
-      db.close(done);
     });
 
     it('works', function(done) {

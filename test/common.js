@@ -1,13 +1,17 @@
+'use strict';
+
 /**
  * Module dependencies.
  */
 
-var mongoose = require('../'),
-    Collection = mongoose.Collection,
-    assert = require('power-assert'),
-    queryCount = 0,
-    opened = 0,
-    closed = 0;
+Error.stackTraceLimit = 10;
+
+const Server = require('mongodb-topology-manager').Server;
+const mongoose = require('../');
+const Collection = mongoose.Collection;
+const assert = require('power-assert');
+
+let server;
 
 if (process.env.D === '1') {
   mongoose.set('debug', true);
@@ -18,6 +22,7 @@ if (process.env.D === '1') {
  */
 
 [
+  'createIndex',
   'ensureIndex',
   'findAndModify',
   'findOne',
@@ -34,7 +39,6 @@ if (process.env.D === '1') {
   var oldMethod = Collection.prototype[method];
 
   Collection.prototype[method] = function() {
-    queryCount++;
     return oldMethod.apply(this, arguments);
   };
 });
@@ -46,7 +50,6 @@ if (process.env.D === '1') {
 var oldOnOpen = Collection.prototype.onOpen;
 
 Collection.prototype.onOpen = function() {
-  opened++;
   return oldOnOpen.apply(this, arguments);
 };
 
@@ -57,7 +60,6 @@ Collection.prototype.onOpen = function() {
 var oldOnClose = Collection.prototype.onClose;
 
 Collection.prototype.onClose = function() {
-  closed++;
   return oldOnClose.apply(this, arguments);
 };
 
@@ -99,7 +101,7 @@ module.exports = function(options) {
  * testing uri
  */
 
-module.exports.uri = process.env.MONGOOSE_TEST_URI || 'mongodb://localhost/mongoose_test';
+module.exports.uri = 'mongodb://localhost:27017/mongoose_test';
 
 /**
  * expose mongoose
@@ -136,30 +138,40 @@ function dropDBs(done) {
   db.once('open', function() {
     // drop the default test database
     db.db.dropDatabase(function() {
-      var db2 = db.useDb('mongoose-test-2');
-      db2.db.dropDatabase(function() {
-        // drop mongos test db if exists
-        var mongos = process.env.MONGOOSE_MULTI_MONGOS_TEST_URI;
-        if (!mongos) {
-          return done();
-        }
-
-
-        var db = mongoose.connect(mongos, {mongos: true});
-        db.once('open', function() {
-          db.db.dropDatabase(done);
-        });
-      });
+      done();
     });
   });
 }
+
+before(function() {
+  return server.purge();
+});
+
+after(function() {
+  this.timeout(15000);
+
+  return server.stop();
+});
 
 before(function(done) {
   this.timeout(10 * 1000);
   dropDBs(done);
 });
-after(function(done) {
-  // DropDBs can be extraordinarily slow on 3.2
-  this.timeout(120 * 1000);
-  dropDBs(done);
+
+module.exports.server = server = new Server('mongod', {
+  port: 27000,
+  dbpath: './data/db/27000',
+  storageEngine: 'mmapv1'
+});
+
+beforeEach(function() {
+  if (this.currentTest) {
+    global.CURRENT_TEST = this.currentTest.title;
+  } else {
+    global.CURRENT_TEST = 'N/A';
+  }
+});
+
+process.on('unhandledRejection', function(error) {
+  console.error(`unhandledRejection in "${global.CURRENT_TEST}":`, error.stack);
 });

@@ -9,6 +9,16 @@ var start = require('./common'),
     Schema = mongoose.Schema;
 
 describe('schema options.timestamps', function() {
+  var conn;
+
+  before(function() {
+    conn = start();
+  });
+
+  after(function(done) {
+    conn.close(done);
+  });
+
   describe('create schema with options.timestamps', function() {
     it('should have createdAt and updatedAt fields', function(done) {
       var TestSchema = new Schema({
@@ -91,18 +101,64 @@ describe('schema options.timestamps', function() {
       assert.ok(TestSchema.path('updated'));
       done();
     });
+
+    it('should not override createdAt when not selected (gh-4340)', function(done) {
+      var TestSchema = new Schema({
+        name: String
+      }, {
+        timestamps: true
+      });
+
+      var Test = conn.model('Test', TestSchema);
+
+      Test.create({
+        name: 'hello'
+      }, function(err, doc) {
+        // Let’s save the dates to compare later.
+        var createdAt = doc.createdAt;
+        var updatedAt = doc.updatedAt;
+
+        assert.ok(doc.createdAt);
+
+        Test.findById(doc._id, { name: true }, function(err, doc) {
+          // The dates shouldn’t be selected here.
+          assert.ok(!doc.createdAt);
+          assert.ok(!doc.updatedAt);
+
+          doc.name = 'world';
+
+          doc.save(function(err, doc) {
+            // Let’s save the new updatedAt date as it should have changed.
+            var newUpdatedAt = doc.updatedAt;
+
+            assert.ok(!doc.createdAt);
+            assert.ok(doc.updatedAt);
+
+            Test.findById(doc._id, function(err, doc) {
+              // Let’s make sure that everything is working again by
+              // comparing the dates with the ones we saved.
+              assert.equal(doc.createdAt.valueOf(), createdAt.valueOf());
+              assert.notEqual(doc.updatedAt.valueOf(), updatedAt.valueOf());
+              assert.equal(doc.updatedAt.valueOf(), newUpdatedAt.valueOf());
+
+              done();
+            });
+          });
+        });
+      });
+    });
   });
 
   describe('auto update createdAt and updatedAt when create/save/update document', function() {
-    var CatSchema = new Schema({
-      name: String,
-      hobby: String
-    }, {timestamps: true});
-
-    var conn = start();
-    var Cat = conn.model('Cat', CatSchema);
+    var CatSchema;
+    var Cat;
 
     before(function(done) {
+      CatSchema = new Schema({
+        name: String,
+        hobby: String
+      }, {timestamps: true});
+      Cat = conn.model('Cat', CatSchema);
       Cat.remove({}, done);
     });
 
@@ -209,9 +265,7 @@ describe('schema options.timestamps', function() {
     });
 
     after(function(done) {
-      Cat.remove({}, function() {
-        conn.close(done);
-      });
+      Cat.remove({}, done);
     });
   });
 });

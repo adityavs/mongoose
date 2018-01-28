@@ -13,19 +13,6 @@ function valid(v) {
   return !v || v.length > 10;
 }
 
-var subBuf = new Schema({
-  name: String,
-  buf: {type: Buffer, validate: [valid, 'valid failed'], required: true}
-});
-
-var UserBuffer = new Schema({
-  name: String,
-  serial: Buffer,
-  array: [Buffer],
-  required: {type: Buffer, required: true, index: true},
-  sub: [subBuf]
-});
-
 // Dont put indexed models on the default connection, it
 // breaks index.test.js tests on a "pure" default conn.
 // mongoose.model('UserBuffer', UserBuffer);
@@ -35,6 +22,31 @@ var UserBuffer = new Schema({
  */
 
 describe('types.buffer', function() {
+  var subBuf;
+  var UserBuffer;
+  var db;
+
+  before(function() {
+    db = start();
+
+    subBuf = new Schema({
+      name: String,
+      buf: {type: Buffer, validate: [valid, 'valid failed'], required: true}
+    });
+
+    UserBuffer = new Schema({
+      name: String,
+      serial: Buffer,
+      array: [Buffer],
+      required: {type: Buffer, required: true, index: true},
+      sub: [subBuf]
+    });
+  });
+
+  after(function(done) {
+    db.close(done);
+  });
+
   it('test that a mongoose buffer behaves and quacks like a buffer', function(done) {
     var a = new MongooseBuffer;
 
@@ -55,8 +67,7 @@ describe('types.buffer', function() {
   });
 
   it('buffer validation', function(done) {
-    var db = start(),
-        User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
+    var User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
 
     User.on('index', function() {
       var t = new User({
@@ -64,7 +75,7 @@ describe('types.buffer', function() {
       });
 
       t.validate(function(err) {
-        assert.equal(err.message, 'UserBuffer validation failed');
+        assert.ok(err.message.indexOf('UserBuffer validation failed') === 0, err.message);
         assert.equal(err.errors.required.kind, 'required');
         t.required = {x: [20]};
         t.save(function(err) {
@@ -72,23 +83,22 @@ describe('types.buffer', function() {
           assert.equal(err.name, 'ValidationError');
           assert.equal(err.errors.required.name, 'CastError');
           assert.equal(err.errors.required.kind, 'Buffer');
-          assert.equal(err.errors.required.message, 'Cast to Buffer failed for value "[object Object]" at path "required"');
+          assert.equal(err.errors.required.message, 'Cast to Buffer failed for value "{ x: [ 20 ] }" at path "required"');
           assert.deepEqual(err.errors.required.value, {x: [20]});
           t.required = new Buffer('hello');
 
           t.sub.push({name: 'Friday Friday'});
           t.save(function(err) {
-            assert.equal(err.message, 'UserBuffer validation failed');
+            assert.ok(err.message.indexOf('UserBuffer validation failed') === 0, err.message);
             assert.equal(err.errors['sub.0.buf'].kind, 'required');
             t.sub[0].buf = new Buffer('well well');
             t.save(function(err) {
-              assert.equal(err.message, 'UserBuffer validation failed');
+              assert.ok(err.message.indexOf('UserBuffer validation failed') === 0, err.message);
               assert.equal(err.errors['sub.0.buf'].kind, 'user defined');
               assert.equal(err.errors['sub.0.buf'].message, 'valid failed');
 
               t.sub[0].buf = new Buffer('well well well');
               t.validate(function(err) {
-                db.close();
                 assert.ifError(err);
                 done();
               });
@@ -100,8 +110,7 @@ describe('types.buffer', function() {
   });
 
   it('buffer storage', function(done) {
-    var db = start(),
-        User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
+    var User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
 
     User.on('index', function() {
       var sampleBuffer = new Buffer([123, 223, 23, 42, 11]);
@@ -115,15 +124,14 @@ describe('types.buffer', function() {
       tj.save(function(err) {
         assert.ifError(err);
         User.find({}, function(err, users) {
-          db.close();
           assert.ifError(err);
           assert.equal(users.length, 1);
           var user = users[0];
           var base64 = sampleBuffer.toString('base64');
           assert.equal(base64,
-              user.serial.toString('base64'), 'buffer mismatch');
+            user.serial.toString('base64'), 'buffer mismatch');
           assert.equal(base64,
-              user.required.toString('base64'), 'buffer mismatch');
+            user.required.toString('base64'), 'buffer mismatch');
           done();
         });
       });
@@ -131,8 +139,7 @@ describe('types.buffer', function() {
   });
 
   it('test write markModified', function(done) {
-    var db = start(),
-        User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
+    var User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
 
     User.on('index', function() {
       var sampleBuffer = new Buffer([123, 223, 23, 42, 11]);
@@ -153,13 +160,12 @@ describe('types.buffer', function() {
           assert.ifError(err);
 
           User.findById(tj._id, function(err, user) {
-            db.close();
             assert.ifError(err);
 
             var expectedBuffer = new Buffer([123, 97, 97, 42, 11]);
 
             assert.equal(expectedBuffer.toString('base64'),
-                user.serial.toString('base64'), 'buffer mismatch');
+              user.serial.toString('base64'), 'buffer mismatch');
 
             assert.equal(false, tj.isModified('required'));
             tj.serial.copy(tj.required, 1);
@@ -363,16 +369,27 @@ describe('types.buffer', function() {
   });
 
   it('can be set to null', function(done) {
-    var db = start(),
-        User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
-    var user = new User({array: [null], required: new Buffer(1)});
+    var User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random()),
+        user = new User({array: [null], required: new Buffer(1)});
     user.save(function(err, doc) {
       assert.ifError(err);
       User.findById(doc, function(err, doc) {
-        db.close();
         assert.ifError(err);
         assert.equal(doc.array.length, 1);
         assert.equal(doc.array[0], null);
+        done();
+      });
+    });
+  });
+
+  it('can be updated to null', function(done) {
+    var User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random()),
+        user = new User({array: [null], required: new Buffer(1), serial: new Buffer(1)});
+    user.save(function(err, doc) {
+      assert.ifError(err);
+      User.findOneAndUpdate({_id: doc.id}, {serial: null}, {new: true}, function(err, doc) {
+        assert.ifError(err);
+        assert.equal(doc.serial, null);
         done();
       });
     });
@@ -389,17 +406,12 @@ describe('types.buffer', function() {
   });
 
   describe('subtype', function() {
-    var db, bufferSchema, B;
+    var bufferSchema, B;
 
     before(function(done) {
-      db = start();
       bufferSchema = new Schema({buf: Buffer});
       B = db.model('1571', bufferSchema);
       done();
-    });
-
-    after(function(done) {
-      db.close(done);
     });
 
     it('default value', function(done) {

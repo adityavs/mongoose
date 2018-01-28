@@ -3,68 +3,72 @@
  * Module dependencies.
  */
 
-var assert = require('power-assert'),
-    start = require('./common'),
-    mongoose = start.mongoose,
-    EmbeddedDocument = require('../lib/types/embedded'),
-    DocumentArray = require('../lib/types/documentarray'),
-    Schema = mongoose.Schema,
-    ValidationError = mongoose.Document.ValidationError;
-
-/**
- * Setup.
- */
-
-function Dummy() {
-  mongoose.Document.call(this, {});
-}
-Dummy.prototype.__proto__ = mongoose.Document.prototype;
-Dummy.prototype.$__setSchema(new Schema);
-
-function Subdocument() {
-  var arr = new DocumentArray;
-  arr._path = 'jsconf.ar';
-  arr._parent = new Dummy;
-  arr[0] = this;
-  EmbeddedDocument.call(this, {}, arr);
-}
-
-/**
- * Inherits from EmbeddedDocument.
- */
-
-Subdocument.prototype.__proto__ = EmbeddedDocument.prototype;
-
-/**
- * Set schema.
- */
-
-Subdocument.prototype.$__setSchema(new Schema({
-  test: {type: String, required: true},
-  work: {type: String, validate: /^good/}
-}));
-
-/**
- * Schema.
- */
-
-var RatingSchema = new Schema({
-  stars: Number,
-  description: {source: {url: String, time: Date}}
-});
-
-var MovieSchema = new Schema({
-  title: String,
-  ratings: [RatingSchema]
-});
-
-mongoose.model('Movie', MovieSchema);
+var assert = require('power-assert');
+var start = require('./common');
+var mongoose = start.mongoose;
+var EmbeddedDocument = require('../lib/types/embedded');
+var EventEmitter = require('events').EventEmitter;
+var DocumentArray = require('../lib/types/documentarray');
+var Schema = mongoose.Schema;
+var ValidationError = mongoose.Document.ValidationError;
 
 /**
  * Test.
  */
 
 describe('types.document', function() {
+  var Dummy;
+  var Subdocument;
+  var RatingSchema;
+  var MovieSchema;
+  var db;
+
+  before(function() {
+    function _Dummy() {
+      mongoose.Document.call(this, {});
+    }
+    Dummy = _Dummy;
+    Dummy.prototype.__proto__ = mongoose.Document.prototype;
+    Dummy.prototype.$__setSchema(new Schema);
+
+    function _Subdocument() {
+      var arr = new DocumentArray;
+      arr._path = 'jsconf.ar';
+      arr._parent = new Dummy;
+      arr[0] = this;
+      EmbeddedDocument.call(this, {}, arr);
+    }
+    Subdocument = _Subdocument;
+
+    Subdocument.prototype.__proto__ = EmbeddedDocument.prototype;
+
+    for (var i in EventEmitter.prototype) {
+      Subdocument[i] = EventEmitter.prototype[i];
+    }
+
+    Subdocument.prototype.$__setSchema(new Schema({
+      test: {type: String, required: true},
+      work: {type: String, validate: /^good/}
+    }));
+
+    RatingSchema = new Schema({
+      stars: Number,
+      description: {source: {url: String, time: Date}}
+    });
+
+    MovieSchema = new Schema({
+      title: String,
+      ratings: [RatingSchema]
+    });
+
+    mongoose.model('Movie', MovieSchema);
+    db = start();
+  });
+
+  after(function(done) {
+    db.close(done);
+  });
+
   it('test that validate sets errors', function(done) {
     var a = new Subdocument();
     a.set('test', '');
@@ -74,7 +78,6 @@ describe('types.document', function() {
     a.validate(function() {
       assert.ok(a.__parent.$__.validationError instanceof ValidationError);
       assert.equal(a.__parent.errors['jsconf.ar.0.work'].name, 'ValidatorError');
-      assert.equal(a.__parent.$__.validationError.toString(), 'ValidationError: Path `test` is required., Validator failed for path `work` with value `nope`');
       done();
     });
   });
@@ -100,7 +103,6 @@ describe('types.document', function() {
   });
 
   it('cached _ids', function(done) {
-    var db = start();
     var Movie = db.model('Movie');
     var m = new Movie;
 
@@ -117,11 +119,10 @@ describe('types.document', function() {
     assert.strictEqual(true, m.$__._id !== m2.$__._id);
     assert.strictEqual(true, m.id !== m2.id);
     assert.strictEqual(true, m.$__._id !== m2.$__._id);
-    db.close(done);
+    done();
   });
 
   it('Subdocument#remove (gh-531)', function(done) {
-    var db = start();
     var Movie = db.model('Movie');
 
     var super8 = new Movie({title: 'Super 8'});
@@ -182,7 +183,7 @@ describe('types.document', function() {
                 Movie.findById(super8._id, function(err, movie) {
                   assert.ifError(err);
                   assert.equal(movie.ratings.length, 0);
-                  db.close(done);
+                  done();
                 });
               });
             });
@@ -194,7 +195,6 @@ describe('types.document', function() {
 
   describe('setting nested objects', function() {
     it('works (gh-1394)', function(done) {
-      var db = start();
       var Movie = db.model('Movie');
 
       Movie.create({
@@ -237,7 +237,7 @@ describe('types.document', function() {
                   assert.equal(String(newDate), movie.ratings[0].description.source.time);
                   // url not overwritten using merge
                   assert.equal('http://www.lifeofpimovie.com/', movie.ratings[0].description.source.url);
-                  db.close(done);
+                  done();
                 });
               });
             });

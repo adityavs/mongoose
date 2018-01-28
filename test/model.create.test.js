@@ -2,19 +2,19 @@
  * Test dependencies.
  */
 
-var start = require('./common'),
-    assert = require('power-assert'),
-    mongoose = start.mongoose,
-    random = require('../lib/utils').random,
-    Schema = mongoose.Schema,
-    DocumentObjectId = mongoose.Types.ObjectId;
+const start = require('./common');
+const assert = require('power-assert');
+const mongoose = start.mongoose;
+const random = require('../lib/utils').random;
+const Schema = mongoose.Schema;
+const DocumentObjectId = mongoose.Types.ObjectId;
 
 /**
  * Setup
  */
 
 var schema = new Schema({
-  title: String
+  title: { type: String, required: true }
 });
 
 
@@ -67,17 +67,15 @@ describe('model', function() {
     });
 
     it('returns a promise', function(done) {
-      var p = B.create({title: 'returns promise'}, function() {
-        assert.ok(p instanceof mongoose.Promise);
-        done();
-      });
+      var p = B.create({title: 'returns promise'});
+      assert.ok(p instanceof mongoose.Promise);
+      done();
     });
 
     it('creates in parallel', function(done) {
-      // we set the time out to be double that of the validator - 1 (so that running in serial will be greater then that)
+      // we set the time out to be double that of the validator - 1 (so that running in serial will be greater than that)
       this.timeout(1000);
-      var db = start(),
-          countPre = 0,
+      var countPre = 0,
           countPost = 0;
 
       var SchemaWithPreSaveHook = new Schema({
@@ -118,23 +116,25 @@ describe('model', function() {
       });
     });
 
-
     describe('callback is optional', function() {
       it('with one doc', function(done) {
         var p = B.create({title: 'optional callback'});
         p.then(function(doc) {
           assert.equal(doc.title, 'optional callback');
           done();
-        }, done).end();
+        }, done);
       });
 
       it('with more than one doc', function(done) {
         var p = B.create({title: 'optional callback 2'}, {title: 'orient expressions'});
-        p.then(function(doc1, doc2) {
+        p.then(function(docs) {
+          assert.equal(docs.length, 2);
+          const doc1 = docs[0];
+          const doc2 = docs[1];
           assert.equal(doc1.title, 'optional callback 2');
           assert.equal(doc2.title, 'orient expressions');
           done();
-        }, done).end();
+        }, done);
       });
 
       it('with array of docs', function(done) {
@@ -147,7 +147,7 @@ describe('model', function() {
           assert.equal(doc1.title, 'optional callback3');
           assert.equal(doc2.title, '3');
           done();
-        }, done).end();
+        }, done);
       });
 
       it('and should reject promise on error', function(done) {
@@ -159,8 +159,17 @@ describe('model', function() {
           }, function(err) {
             assert(err);
             done();
-          }).end();
-        }, done).end();
+          });
+        }, done);
+      });
+
+      it('if callback is falsy, will ignore it (gh-5061)', function(done) {
+        B.create({ title: 'test' }, null).
+          then(function(doc) {
+            assert.equal(doc.title, 'test');
+            done();
+          }).
+          catch(done);
       });
     });
   });

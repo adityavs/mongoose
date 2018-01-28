@@ -2,8 +2,10 @@
  * Module dependencies.
  */
 
-var start = require('./common');
 var assert = require('power-assert');
+var start = require('./common');
+var storeShard = require('../lib/plugins/sharding').storeShard;
+
 var mongoose = start.mongoose;
 
 describe('sharding', function() {
@@ -22,7 +24,7 @@ describe('sharding', function() {
     var currentTime = new Date();
     d._doc = {date: currentTime};
 
-    d.$__storeShard();
+    storeShard.call(d);
     assert.equal(d.$__.shardval.date, currentTime);
     done();
   });
@@ -50,9 +52,9 @@ describe('toObject()', function() {
     done();
   });
 
-  it('can overwrite by passing an option', function(done) {
+  it('can overwrite schema-set default options', function(done) {
     var d = new Stub();
-    assert.deepEqual(d.toObject({minimize: true}), {});
+    assert.deepEqual(d.toObject({minimize: true, virtuals: false}), {});
     done();
   });
 

@@ -1,6 +1,10 @@
+'use strict';
+
 var assert = require('power-assert');
 var async = require('async');
 var mongoose = require('../../');
+
+var Schema = mongoose.Schema;
 
 describe('discriminator docs', function () {
   var Event;
@@ -185,12 +189,12 @@ describe('discriminator docs', function () {
       clickedLinkSchema);
 
     var event1 = new ClickedLinkEvent();
-    event1.validate(function () {
+    event1.validate(function() {
       assert.equal(eventSchemaCalls, 1);
       assert.equal(clickedSchemaCalls, 1);
 
       var generic = new Event();
-      generic.validate(function () {
+      generic.validate(function() {
         assert.equal(eventSchemaCalls, 2);
         assert.equal(clickedSchemaCalls, 1);
         // acquit:ignore:start
@@ -203,10 +207,7 @@ describe('discriminator docs', function () {
   /**
    * A discriminator's fields are the union of the base schema's fields and
    * the discriminator schema's fields, and the discriminator schema's fields
-   * take precedence. This behavior gets quirky when you have a custom `_id`
-   * field. A schema gets an `_id` field by default, so the base schema's
-   * `_id` field will get overridden by the discriminator schema's default
-   * `_id` field.
+   * take precedence. There is one exception: the default `_id` field.
    *
    * You can work around this by setting the `_id` option to false in the
    * discriminator schema as shown below.
@@ -214,30 +215,193 @@ describe('discriminator docs', function () {
   it('Handling custom _id fields', function (done) {
     var options = {discriminatorKey: 'kind'};
 
-    // Base schema has a String _id...
+    // Base schema has a String `_id` and a Date `time`...
     var eventSchema = new mongoose.Schema({_id: String, time: Date},
       options);
     var Event = mongoose.model('BaseEvent', eventSchema);
 
-    var clickedLinkSchema = new mongoose.Schema({url: String}, options);
+    var clickedLinkSchema = new mongoose.Schema({
+      url: String,
+      time: String
+    }, options);
+    // But the discriminator schema has a String `time`, and an implicitly added
+    // ObjectId `_id`.
+    assert.ok(clickedLinkSchema.path('_id'));
+    assert.equal(clickedLinkSchema.path('_id').instance, 'ObjectID');
     var ClickedLinkEvent = Event.discriminator('ChildEventBad',
       clickedLinkSchema);
 
-    var event1 = new ClickedLinkEvent();
-    // Woops, clickedLinkSchema overwrote the custom _id
-    assert.ok(event1._id instanceof mongoose.Types.ObjectId);
+    var event1 = new ClickedLinkEvent({ _id: 'custom id', time: '4pm' });
+    // Woops, clickedLinkSchema overwrites the `time` path, but **not**
+    // the `_id` path because that was implicitly added.
+    assert.ok(typeof event1._id === 'string');
+    assert.ok(typeof event1.time === 'string');
 
-    // But if you set `_id` option to false...
-    clickedLinkSchema = new mongoose.Schema({url: String},
-      {discriminatorKey: 'kind', _id: false});
-    ClickedLinkEvent = Event.discriminator('ChildEventGood',
-      clickedLinkSchema);
-
-    // The custom _id from the base schema comes through
-    var event2 = new ClickedLinkEvent({_id: 'test'});
-    assert.ok(event2._id.toString() === event2._id);
     // acquit:ignore:start
     done();
     // acquit:ignore:end
+  });
+
+  /**
+   * When you use `Model.create()`, mongoose will pull the correct type from
+   * the discriminator key for you.
+   */
+  it('Using discriminators with `Model.create()`', function(done) {
+    var Schema = mongoose.Schema;
+    var shapeSchema = new Schema({
+      name: String
+    }, { discriminatorKey: 'kind' });
+
+    var Shape = db.model('Shape', shapeSchema);
+
+    var Circle = Shape.discriminator('Circle',
+      new Schema({ radius: Number }));
+    var Square = Shape.discriminator('Square',
+      new Schema({ side: Number }));
+
+    var shapes = [
+      { name: 'Test' },
+      { kind: 'Circle', radius: 5 },
+      { kind: 'Square', side: 10 }
+    ];
+    Shape.create(shapes, function(error, shapes) {
+      assert.ifError(error);
+      assert.ok(shapes[0] instanceof Shape);
+      assert.ok(shapes[1] instanceof Circle);
+      assert.equal(shapes[1].radius, 5);
+      assert.ok(shapes[2] instanceof Square);
+      assert.equal(shapes[2].side, 10);
+      // acquit:ignore:start
+      done();
+      // acquit:ignore:end
+    });
+  });
+
+  /**
+   * You can also define discriminators on embedded document arrays.
+   * Embedded discriminators are different because the different discriminator
+   * types are stored in the same document array (within a document) rather
+   * than the same collection. In other words, embedded discriminators let
+   * you store subdocuments matching different schemas in the same array.
+   *
+   * As a general best practice, make sure you declare any hooks on your
+   * schemas **before** you use them. You should **not** call `pre()` or
+   * `post()` after calling `discriminator()`
+   */
+  it('Embedded discriminators in arrays', function(done) {
+    var eventSchema = new Schema({ message: String },
+      { discriminatorKey: 'kind', _id: false });
+
+    var batchSchema = new Schema({ events: [eventSchema] });
+
+    // `batchSchema.path('events')` gets the mongoose `DocumentArray`
+    var docArray = batchSchema.path('events');
+
+    // The `events` array can contain 2 different types of events, a
+    // 'clicked' event that requires an element id that was clicked...
+    var clickedSchema = new Schema({
+      element: {
+        type: String,
+        required: true
+      }
+    }, { _id: false });
+    // Make sure to attach any hooks to `eventSchema` and `clickedSchema`
+    // **before** calling `discriminator()`.
+    var Clicked = docArray.discriminator('Clicked', clickedSchema);
+
+    // ... and a 'purchased' event that requires the product that was purchased.
+    var Purchased = docArray.discriminator('Purchased', new Schema({
+      product: {
+        type: String,
+        required: true
+      }
+    }, { _id: false }));
+
+    var Batch = db.model('EventBatch', batchSchema);
+
+    // Create a new batch of events with different kinds
+    var batch = {
+      events: [
+        { kind: 'Clicked', element: '#hero', message: 'hello' },
+        { kind: 'Purchased', product: 'action-figure-1', message: 'world' }
+      ]
+    };
+
+    Batch.create(batch).
+      then(function(doc) {
+        assert.equal(doc.events.length, 2);
+
+        assert.equal(doc.events[0].element, '#hero');
+        assert.equal(doc.events[0].message, 'hello');
+        assert.ok(doc.events[0] instanceof Clicked);
+
+        assert.equal(doc.events[1].product, 'action-figure-1');
+        assert.equal(doc.events[1].message, 'world');
+        assert.ok(doc.events[1] instanceof Purchased);
+
+        doc.events.push({ kind: 'Purchased', product: 'action-figure-2' });
+        return doc.save();
+      }).
+      then(function(doc) {
+        assert.equal(doc.events.length, 3);
+
+        assert.equal(doc.events[2].product, 'action-figure-2');
+        assert.ok(doc.events[2] instanceof Purchased);
+
+        done();
+      }).
+      catch(done);
+  });
+
+  /**
+   * Recursive embedded discriminators
+   */
+  it('Recursive embedded discriminators in arrays', function(done) {
+    var singleEventSchema = new Schema({ message: String },
+      { discriminatorKey: 'kind', _id: false });
+
+    var eventListSchema = new Schema({ events: [singleEventSchema] });
+
+    var subEventSchema = new Schema({
+       sub_events: [singleEventSchema]
+    }, { _id: false });
+
+    var SubEvent = subEventSchema.path('sub_events').discriminator('SubEvent', subEventSchema)
+    eventListSchema.path('events').discriminator('SubEvent', subEventSchema);
+
+    var Eventlist = db.model('EventList', eventListSchema);
+
+    // Create a new batch of events with different kinds
+    var list = {
+      events: [
+        { kind: 'SubEvent', sub_events: [{kind:'SubEvent', sub_events:[], message:'test1'}], message: 'hello' },
+        { kind: 'SubEvent', sub_events: [{kind:'SubEvent', sub_events:[{kind:'SubEvent', sub_events:[], message:'test3'}], message:'test2'}], message: 'world' }
+      ]
+    };
+
+    Eventlist.create(list).
+      then(function(doc) {
+        assert.equal(doc.events.length, 2);
+
+        assert.equal(doc.events[0].sub_events[0].message, 'test1');
+        assert.equal(doc.events[0].message, 'hello');
+        assert.ok(doc.events[0].sub_events[0] instanceof SubEvent);
+
+        assert.equal(doc.events[1].sub_events[0].sub_events[0].message, 'test3');
+        assert.equal(doc.events[1].message, 'world');
+        assert.ok(doc.events[1].sub_events[0].sub_events[0] instanceof SubEvent);
+
+        doc.events.push({kind:'SubEvent', sub_events:[{kind:'SubEvent', sub_events:[], message:'test4'}], message:'pushed'});
+        return doc.save();
+      }).
+      then(function(doc) {
+        assert.equal(doc.events.length, 3);
+
+        assert.equal(doc.events[2].message, 'pushed');
+        assert.ok(doc.events[2].sub_events[0] instanceof SubEvent);
+
+        done();
+      }).
+      catch(done);
   });
 });
